@@ -37,6 +37,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { getInheritedAgentDefaults } from "./bakedEnvHelpers";
+import { ExternalAgentAttestationDialog } from "./ExternalAgentAttestationDialog";
 
 export function AgentsView() {
   const { openPersonaProfilePanel, openProfilePanel } = useProfilePanel();
@@ -53,6 +54,8 @@ export function AgentsView() {
   // Exclusivity: create never sets `personaDialogState` (edit/dup/import do),
   // so the create-mode and definition-edit AgentDialog mounts never coexist.
   const [isCreateDialogOpen, setIsCreateDialogOpen] = React.useState(false);
+  const [isExternalAttestationOpen, setIsExternalAttestationOpen] =
+    React.useState(false);
 
   function openUnifiedCreate() {
     personas.prepareCreate();
@@ -259,6 +262,9 @@ export function AgentsView() {
               isPersonasPending={personas.isPending}
               onCreatePersona={openUnifiedCreate}
               onDiscoverPersonas={personas.openCatalog}
+              onAttestExternalAgent={() => {
+                setIsExternalAttestationOpen(true);
+              }}
               onDuplicatePersona={personas.openDuplicate}
               onEditPersona={personas.openEdit}
               onSharePersona={personas.openShare}
@@ -322,6 +328,10 @@ export function AgentsView() {
           runtimesLoading={personas.acpRuntimesQuery.isLoading}
         />
       ) : null}
+      <ExternalAgentAttestationDialog
+        onOpenChange={setIsExternalAttestationOpen}
+        open={isExternalAttestationOpen}
+      />
       {agents.agentToAddToChannel ? (
         <AddAgentToChannelDialog
           agent={agents.agentToAddToChannel}
