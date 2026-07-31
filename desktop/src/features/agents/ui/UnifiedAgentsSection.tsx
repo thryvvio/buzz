@@ -53,6 +53,7 @@ type UnifiedAgentsSectionProps = {
   isPersonasPending: boolean;
   onCreatePersona: () => void;
   onDiscoverPersonas: () => void;
+  onAttestExternalAgent: () => void;
   onDuplicatePersona: (persona: AgentPersona) => void;
   onEditPersona: (persona: AgentPersona) => void;
   onSharePersona: (
@@ -93,6 +94,7 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
     isPersonasPending,
     onCreatePersona,
     onDiscoverPersonas,
+    onAttestExternalAgent,
     onDuplicatePersona,
     onEditPersona,
     onSharePersona,
@@ -193,6 +195,7 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
               onCreate={onCreatePersona}
               onDiscover={onDiscoverPersonas}
               onImport={openFilePicker}
+              onAttestExternalAgent={onAttestExternalAgent}
             />
           </div>
 
@@ -444,11 +447,13 @@ function NewAgentCard({
   onCreate,
   onDiscover,
   onImport,
+  onAttestExternalAgent,
 }: {
   isPending: boolean;
   onCreate: () => void;
   onDiscover: () => void;
   onImport: () => void;
+  onAttestExternalAgent: () => void;
 }) {
   return (
     <DropdownMenu modal={false}>
@@ -471,6 +476,9 @@ function NewAgentCard({
           onClick={onImport}
         >
           Import
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onAttestExternalAgent}>
+          Attest external agent
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
