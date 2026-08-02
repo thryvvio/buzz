@@ -970,6 +970,21 @@ impl AcpClient {
             .await
         {
             Err(AcpError::HardTimeout { .. }) => Err(AcpError::CancelDrainTimeout(grace)),
+            // Hermes reports an intentionally interrupted prompt as the
+            // generic JSON-RPC internal error instead of returning
+            // `stopReason: "cancelled"`. At this boundary the client has
+            // already sent `session/cancel`, so the correlated terminal
+            // response is a successful cancellation, not a failed turn.
+            Err(AcpError::AgentError {
+                code: -32603,
+                message,
+            }) if message.eq_ignore_ascii_case("Internal error") => {
+                tracing::debug!(
+                    target: "acp::cancel",
+                    "agent acknowledged cancellation with -32603 Internal error"
+                );
+                Ok(StopReason::Cancelled)
+            }
             other => other,
         }
     }
@@ -2983,6 +2998,31 @@ mod tests {
         assert!(
             matches!(result, Err(AcpError::CancelDrainTimeout(g)) if g == grace),
             "expected CancelDrainTimeout({grace:?}), got {result:?}"
+        );
+    }
+
+    /// Hermes terminates an intentionally cancelled `session/prompt` request
+    /// with JSON-RPC `-32603 Internal error` rather than an ACP
+    /// `stopReason: "cancelled"` result. Once this client sent
+    /// `session/cancel`, that correlated terminal response is cancellation —
+    /// surfacing it as an application failure produces a false Turn error and
+    /// retries work that was deliberately interrupted.
+    #[tokio::test]
+    async fn cancel_with_cleanup_grace_treats_hermes_internal_error_as_cancelled() {
+        let mut client = spawn_script(
+            r#"read -r _cancel
+echo '{"jsonrpc":"2.0","id":999,"error":{"code":-32603,"message":"Internal error"}}'"#,
+        )
+        .await;
+        client.last_prompt_id = Some(999);
+
+        let result = client
+            .cancel_with_cleanup_grace("test-session", std::time::Duration::from_secs(1))
+            .await;
+
+        assert!(
+            matches!(result, Ok(StopReason::Cancelled)),
+            "expected intentional cancellation, got {result:?}"
         );
     }
 
