@@ -8,6 +8,7 @@ mod egress_guard;
 mod event_sync;
 mod events;
 mod huddle;
+mod identity_storage;
 mod key_backup;
 mod linux_media;
 mod managed_agents;
@@ -64,10 +65,7 @@ use mesh_llm_stubs::*;
 #[cfg(all(feature = "mesh-llm", target_os = "macos"))]
 use shutdown::{hard_exit_after_mesh_shutdown, relaunch_after_mesh_shutdown};
 use shutdown::{is_restart_request, shut_down_app};
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
 use tauri::{Emitter, Manager, RunEvent};
 #[cfg(target_os = "macos")]
 use tauri::{Listener, WindowEvent};
@@ -77,7 +75,6 @@ use tray_menu::show_main_window;
 
 #[cfg(target_os = "macos")]
 const INITIAL_RENDER_READY_EVENT: &str = "initial-render-ready";
-
 fn reveal_initial_window<R: tauri::Runtime>(window: &tauri::Window<R>) {
     if let Err(error) = window.show() {
         eprintln!("buzz-desktop: failed to reveal main window: {error}");
@@ -466,6 +463,18 @@ pub fn run() {
                 *guard = Some(app_handle.clone());
             }
 
+            let (tts_settings, tts_settings_load_error) =
+                huddle::tts_settings::load_for_app(&app_handle);
+            if let Ok(mut guard) = state.huddle_audio.tts.lock() {
+                *guard = tts_settings.clone();
+            }
+            if let Ok(mut guard) = state.huddle_audio.tts_load_error.lock() {
+                *guard = tts_settings_load_error;
+            }
+            if let Ok(mut huddle) = state.huddle_state.lock() {
+                huddle.tts_enabled = tts_settings.agent_text_to_speech;
+            }
+
             // Bring up the runtime-owned shared-compute coordinator before
             // saved agents are restored. Its lifetime is tied to the app, not
             // a UI mount; it publishes discovery and reconciles membership for
@@ -839,6 +848,12 @@ pub fn run() {
             update_team,
             delete_team,
             export_agent_snapshot,
+            card_mint_key_status,
+            card_mint_save_openai_key,
+            mint_agent_card,
+            save_agent_card,
+            list_agent_cards,
+            load_agent_card,
             preview_agent_snapshot_import,
             confirm_agent_snapshot_import,
             encode_agent_snapshot_for_send,
@@ -877,6 +892,12 @@ pub fn run() {
             download_voice_models,
             get_model_status,
             set_tts_enabled,
+            huddle::tts_settings::get_tts_settings,
+            huddle::tts_settings::list_voice_registry,
+            huddle::tts_settings::set_pocket_voice,
+            huddle::tts_settings::preview_pocket_voice,
+            huddle::tts_settings::import_pocket_voice,
+            huddle::tts_settings::delete_pocket_voice,
             speak_agent_message,
             add_agent_to_huddle,
             check_pipeline_hotstart,
