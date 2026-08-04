@@ -34,6 +34,7 @@ use buzz_core::kind::{
     KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE,
     KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
     RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    SCOUT_CHANNEL_CLAIM_ADMIN, SCOUT_CHANNEL_DELETE_EXECUTE, SCOUT_CHANNEL_DELETE_PREPARE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -268,6 +269,9 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         {
             Ok(Scope::AdminUsers)
         }
+        SCOUT_CHANNEL_CLAIM_ADMIN | SCOUT_CHANNEL_DELETE_PREPARE | SCOUT_CHANNEL_DELETE_EXECUTE => {
+            Ok(Scope::AdminChannels)
+        }
         // NIP-IA: identity archive/unarchive requests (9035/9036).
         // Scope is intentionally UsersWrite, not AdminUsers: NIP-IA's self and
         // owner-of-agent paths are open to ordinary users (a user retiring their
@@ -459,6 +463,9 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | RELAY_ADMIN_REMOVE_MEMBER
             | RELAY_ADMIN_CHANGE_ROLE
             | RELAY_ADMIN_SET_WORKSPACE_PROFILE
+            | SCOUT_CHANNEL_CLAIM_ADMIN
+            | SCOUT_CHANNEL_DELETE_PREPARE
+            | SCOUT_CHANNEL_DELETE_EXECUTE
             | KIND_NIP43_LEAVE_REQUEST
             // NIP-IA: identity archive/unarchive requests drive relay-global
             // archive state (8002/8003/13535) and are audited as global request
@@ -2201,6 +2208,22 @@ async fn ingest_event_inner(
         });
     }
 
+    // Scout operator commands are signed, community-global Nostr commands. They
+    // are executed directly and never stored as ordinary user content.
+    if matches!(
+        kind_u32,
+        SCOUT_CHANNEL_CLAIM_ADMIN | SCOUT_CHANNEL_DELETE_PREPARE | SCOUT_CHANNEL_DELETE_EXECUTE
+    ) {
+        crate::handlers::scout_operator::handle_event(tenant, state, &event)
+            .await
+            .map_err(|error| IngestError::Rejected(format!("invalid: {error}")))?;
+        return Ok(IngestResult {
+            event_id: event_id_hex,
+            accepted: true,
+            message: String::new(),
+        });
+    }
+
     // Handled directly — removes the sender from relay_members. NOT stored.
     if kind_u32 == KIND_NIP43_LEAVE_REQUEST {
         if !state.config.require_relay_membership {
@@ -3029,6 +3052,23 @@ mod tests {
             assert!(
                 !requires_h_channel_scope(kind),
                 "kind {kind} must not require an h tag"
+            );
+        }
+    }
+
+    #[test]
+    fn scout_operator_commands_are_global_and_require_admin_channels_scope() {
+        let dummy = make_dummy_event();
+        for kind in [
+            SCOUT_CHANNEL_CLAIM_ADMIN,
+            SCOUT_CHANNEL_DELETE_PREPARE,
+            SCOUT_CHANNEL_DELETE_EXECUTE,
+        ] {
+            assert!(is_global_only_kind(kind), "kind {kind} must be global-only");
+            assert!(!requires_h_channel_scope(kind));
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).expect("known operator kind"),
+                Scope::AdminChannels
             );
         }
     }

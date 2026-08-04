@@ -26,6 +26,10 @@ pub enum AuditAction {
     AuthFailure,
     /// A client exceeded the rate limit.
     RateLimitExceeded,
+    /// A least-privilege operator action was prepared for human approval.
+    OperatorActionRequested,
+    /// A human-approved least-privilege operator action was executed.
+    OperatorActionExecuted,
     /// A media file was uploaded via the Blossom endpoint.
     MediaUploaded,
 }
@@ -44,6 +48,8 @@ impl AuditAction {
             Self::AuthSuccess => "auth_success",
             Self::AuthFailure => "auth_failure",
             Self::RateLimitExceeded => "rate_limit_exceeded",
+            Self::OperatorActionRequested => "operator_action_requested",
+            Self::OperatorActionExecuted => "operator_action_executed",
             Self::MediaUploaded => "media_uploaded",
         }
     }
@@ -59,6 +65,8 @@ impl AuditAction {
         Self::AuthSuccess,
         Self::AuthFailure,
         Self::RateLimitExceeded,
+        Self::OperatorActionRequested,
+        Self::OperatorActionExecuted,
         Self::MediaUploaded,
     ];
 }

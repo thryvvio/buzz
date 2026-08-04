@@ -42,6 +42,11 @@
       "pattern": "^([0-9a-f]{64})?$",
       "description": "64-char lowercase hex Nostr pubkey of the relay operator. Required when relay.requireRelayMembership=true."
     },
+    "scoutOperatorPubkey": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{64})?$",
+      "description": "Optional 64-char lowercase hex Nostr pubkey granted the audited Scout channel-operator bridge."
+    },
     "secrets": {
       "type": "object",
       "additionalProperties": false,

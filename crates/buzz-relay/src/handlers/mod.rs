@@ -32,6 +32,8 @@ pub mod relay_admin;
 pub mod report;
 /// REQ handler — subscribe, deliver historical events, then EOSE.
 pub mod req;
+/// Scout's least-privilege operational bridge.
+pub mod scout_operator;
 /// NIP-29 and NIP-25 side-effect handlers.
 pub mod side_effects;
 
