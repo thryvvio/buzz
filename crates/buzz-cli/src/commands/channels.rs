@@ -953,6 +953,124 @@ pub async fn cmd_delete_channel(client: &BuzzClient, channel_id: &str) -> Result
     Ok(())
 }
 
+pub async fn cmd_claim_channel_admin(
+    client: &BuzzClient,
+    channel_id: &str,
+    reason: &str,
+) -> Result<(), CliError> {
+    use nostr::{EventBuilder, Kind, Tag};
+    let channel = parse_uuid(channel_id)?;
+    let reason = reason.trim();
+    if reason.is_empty() || reason.len() > 1_000 {
+        return Err(CliError::Usage(
+            "--reason must contain 1 to 1000 bytes".into(),
+        ));
+    }
+    let channel_text = channel.to_string();
+    let channel_tag = Tag::parse(["channel", channel_text.as_str()])
+        .map_err(|error| CliError::Other(format!("tag error: {error}")))?;
+    let event = client.sign_event(
+        EventBuilder::new(
+            Kind::Custom(buzz_core::kind::SCOUT_CHANNEL_CLAIM_ADMIN as u16),
+            reason,
+        )
+        .tags([channel_tag]),
+    )?;
+    let response = client.submit_event(event).await?;
+    println!("{}", normalize_write_response(&response));
+    Ok(())
+}
+
+pub async fn cmd_prepare_channel_delete(
+    client: &BuzzClient,
+    channel_id: &str,
+    reason: &str,
+) -> Result<(), CliError> {
+    use nostr::{EventBuilder, Kind, Tag};
+    let channel = parse_uuid(channel_id)?;
+    let reason = reason.trim();
+    if reason.is_empty() || reason.len() > 1_000 {
+        return Err(CliError::Usage(
+            "--reason must contain 1 to 1000 bytes".into(),
+        ));
+    }
+    let tenant = buzz_core::tenant::relay_url_authority(client.relay_url());
+    let request = Uuid::new_v4();
+    let nonce = Uuid::new_v4();
+    let expires = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| CliError::Other(error.to_string()))?
+        .as_secs()
+        + 10 * 60;
+    let statement = format!(
+        "APPROVE BUZZ CHANNEL_DELETE tenant={tenant} channel={channel} request={request} nonce={nonce} expires={expires}"
+    );
+    let channel_text = channel.to_string();
+    let request_text = request.to_string();
+    let nonce_text = nonce.to_string();
+    let expires_text = expires.to_string();
+    let tags = vec![
+        Tag::parse(["tenant", tenant.as_str()]),
+        Tag::parse(["channel", channel_text.as_str()]),
+        Tag::parse(["request", request_text.as_str()]),
+        Tag::parse(["nonce", nonce_text.as_str()]),
+        Tag::parse(["expires", expires_text.as_str()]),
+    ]
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|error| CliError::Other(format!("tag error: {error}")))?;
+    let event = client.sign_event(
+        EventBuilder::new(
+            Kind::Custom(buzz_core::kind::SCOUT_CHANNEL_DELETE_PREPARE as u16),
+            reason,
+        )
+        .tags(tags),
+    )?;
+    let response = client.submit_event(event).await?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "request_id": request,
+            "channel_id": channel,
+            "expires": expires,
+            "approval": statement,
+            "prepare": normalize_write_response(&response),
+            "instruction": "A current human relay owner must post the approval text exactly in Buzz, then pass that message event ID to channels delete-execute."
+        })
+    );
+    Ok(())
+}
+
+pub async fn cmd_execute_channel_delete(
+    client: &BuzzClient,
+    request: &str,
+    approval_event: &str,
+) -> Result<(), CliError> {
+    use nostr::{EventBuilder, EventId, Kind, Tag};
+    let request = parse_uuid(request)?;
+    let approval = EventId::parse(approval_event)
+        .map_err(|error| CliError::Usage(format!("invalid --approval-event: {error}")))?;
+    let request_text = request.to_string();
+    let approval_text = approval.to_hex();
+    let tags = [
+        Tag::parse(["request", request_text.as_str()]),
+        Tag::parse(["approval", approval_text.as_str()]),
+    ]
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|error| CliError::Other(format!("tag error: {error}")))?;
+    let event = client.sign_event(
+        EventBuilder::new(
+            Kind::Custom(buzz_core::kind::SCOUT_CHANNEL_DELETE_EXECUTE as u16),
+            "",
+        )
+        .tags(tags),
+    )?;
+    let response = client.submit_event(event).await?;
+    println!("{}", normalize_write_response(&response));
+    Ok(())
+}
+
 pub async fn cmd_add_channel_member(
     client: &BuzzClient,
     channel_id: &str,
@@ -1152,6 +1270,16 @@ pub async fn dispatch(
         ChannelsCmd::Archive { channel } => cmd_archive_channel(client, &channel).await,
         ChannelsCmd::Unarchive { channel } => cmd_unarchive_channel(client, &channel).await,
         ChannelsCmd::Delete { channel } => cmd_delete_channel(client, &channel).await,
+        ChannelsCmd::ClaimAdmin { channel, reason } => {
+            cmd_claim_channel_admin(client, &channel, &reason).await
+        }
+        ChannelsCmd::DeletePrepare { channel, reason } => {
+            cmd_prepare_channel_delete(client, &channel, &reason).await
+        }
+        ChannelsCmd::DeleteExecute {
+            request,
+            approval_event,
+        } => cmd_execute_channel_delete(client, &request, &approval_event).await,
         ChannelsCmd::Members { channel } => cmd_list_channel_members(client, &channel).await,
         ChannelsCmd::AddMember {
             channel,

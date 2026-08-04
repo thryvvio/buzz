@@ -643,6 +643,36 @@ pub enum ChannelsCmd {
         #[arg(long)]
         channel: String,
     },
+    /// Claim routine admin access to a channel without taking ownership
+    #[command(name = "claim-admin")]
+    ClaimAdmin {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// Human-readable reason recorded in the audit trail
+        #[arg(long)]
+        reason: String,
+    },
+    /// Prepare Scout's owner-approved channel deletion request
+    #[command(name = "delete-prepare")]
+    DeletePrepare {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// Human-readable reason recorded in the audit trail
+        #[arg(long)]
+        reason: String,
+    },
+    /// Execute a prepared Scout deletion using the owner's signed approval message
+    #[command(name = "delete-execute")]
+    DeleteExecute {
+        /// Request UUID printed by delete-prepare
+        #[arg(long)]
+        request: String,
+        /// Event ID of the owner's exact approval message
+        #[arg(long)]
+        approval_event: String,
+    },
     /// List members of a channel
     Members {
         /// Channel UUID
@@ -2170,8 +2200,11 @@ mod tests {
             vec![
                 "add-member",
                 "archive",
+                "claim-admin",
                 "create",
                 "delete",
+                "delete-execute",
+                "delete-prepare",
                 "get",
                 "join",
                 "leave",
@@ -2289,7 +2322,7 @@ mod tests {
         let expected: Vec<(&str, usize)> = vec![
             ("agents", 5),
             ("canvas", 2),
-            ("channels", 16),
+            ("channels", 19),
             ("dms", 4),
             ("emoji", 5),
             ("feed", 1),

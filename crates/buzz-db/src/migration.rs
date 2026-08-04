@@ -561,7 +561,7 @@ mod tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 26);
+        assert_eq!(migrations.len(), 27);
         assert_eq!(migrations[0].version, 1);
         assert_eq!(&*migrations[0].description, "initial schema");
         assert!(migrations[0]
@@ -919,6 +919,17 @@ mod tests {
         assert!(heartbeat.contains("epoch"));
         assert!(heartbeat.contains("INSERT INTO replica_heartbeat (id) VALUES (1)"));
         assert!(heartbeat.contains("_operator_global_tables"));
+
+        // Scout's destructive channel action is a tenant-scoped, short-lived,
+        // single-use approval record. It stays additive so brownfield relays
+        // preserve all previous migration checksums.
+        assert_eq!(migrations[26].version, 27);
+        let operator_approvals = migrations[26].sql.as_str();
+        assert!(operator_approvals.contains("CREATE TABLE operator_action_approvals"));
+        assert!(operator_approvals.contains("PRIMARY KEY (community_id, id)"));
+        assert!(operator_approvals.contains("UNIQUE (community_id, approval_event_id)"));
+        assert!(operator_approvals.contains("REFERENCES channels (community_id, id)"));
+        assert!(!operator_approvals.contains("_operator_global_tables"));
     }
 
     #[test]

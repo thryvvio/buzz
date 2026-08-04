@@ -186,6 +186,10 @@ pub struct Config {
     /// skipped — a typo must not silently disable an operator.
     pub relay_operator_pubkeys: Vec<String>,
 
+    /// Single agent identity granted cross-channel routine administration while
+    /// it remains a current relay admin or owner. It is never treated as an owner.
+    pub scout_operator_pubkey: Option<String>,
+
     /// Allow NIP-OA owner attestation for relay membership.
     ///
     /// When `true` and `require_relay_membership` is also `true`, agents
@@ -623,6 +627,18 @@ impl Config {
             }
             Err(_) => Vec::new(),
         };
+        let scout_operator_pubkey = match std::env::var("BUZZ_SCOUT_OPERATOR_PUBKEY") {
+            Ok(raw) if !raw.trim().is_empty() => {
+                let value = raw.trim().to_ascii_lowercase();
+                if value.len() != 64 || !value.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Err(ConfigError::InvalidValue(
+                        "BUZZ_SCOUT_OPERATOR_PUBKEY must be a 64-character hex pubkey".to_string(),
+                    ));
+                }
+                Some(value)
+            }
+            _ => None,
+        };
         if !relay_operator_pubkeys.is_empty() && relay_operator_api_origin.is_none() {
             return Err(ConfigError::InvalidValue(
                 "RELAY_OPERATOR_API_ORIGIN is required when RELAY_OPERATOR_PUBKEYS is configured"
@@ -851,6 +867,11 @@ impl Config {
         let privacy_markdown = read_policy_markdown("BUZZ_PRIVACY_POLICY_MARKDOWN")?;
         let age_attestation_required = parse_optional_bool("BUZZ_AGE_ATTESTATION_REQUIRED")?;
         let audit_enabled = parse_bool("BUZZ_AUDIT_ENABLED", true)?;
+        if scout_operator_pubkey.is_some() && !audit_enabled {
+            return Err(ConfigError::InvalidValue(
+                "BUZZ_SCOUT_OPERATOR_PUBKEY requires BUZZ_AUDIT_ENABLED=true".to_string(),
+            ));
+        }
         let join_policy = if terms_markdown.is_none()
             && privacy_markdown.is_none()
             && !age_attestation_required
@@ -960,6 +981,7 @@ impl Config {
             relay_owner_pubkey,
             relay_operator_api_origin,
             relay_operator_pubkeys,
+            scout_operator_pubkey,
             allow_nip_oa_auth,
             media,
             media_max_concurrent_uploads,
@@ -1297,6 +1319,34 @@ mod tests {
             result,
             Err(ConfigError::InvalidValue(ref message))
                 if message.contains("BUZZ_AUDIT_ENABLED")
+        ));
+    }
+
+    #[test]
+    fn scout_operator_requires_audit_logging() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let previous_scout = std::env::var_os("BUZZ_SCOUT_OPERATOR_PUBKEY");
+        let previous_audit = std::env::var_os("BUZZ_AUDIT_ENABLED");
+        std::env::set_var(
+            "BUZZ_SCOUT_OPERATOR_PUBKEY",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+        std::env::set_var("BUZZ_AUDIT_ENABLED", "false");
+
+        let result = Config::from_env();
+
+        match previous_scout {
+            Some(value) => std::env::set_var("BUZZ_SCOUT_OPERATOR_PUBKEY", value),
+            None => std::env::remove_var("BUZZ_SCOUT_OPERATOR_PUBKEY"),
+        }
+        match previous_audit {
+            Some(value) => std::env::set_var("BUZZ_AUDIT_ENABLED", value),
+            None => std::env::remove_var("BUZZ_AUDIT_ENABLED"),
+        }
+        assert!(matches!(
+            result,
+            Err(ConfigError::InvalidValue(ref message))
+                if message.contains("BUZZ_SCOUT_OPERATOR_PUBKEY requires BUZZ_AUDIT_ENABLED=true")
         ));
     }
 

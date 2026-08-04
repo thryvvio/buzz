@@ -380,6 +380,12 @@ pub const RELAY_ADMIN_REMOVE_MEMBER: u32 = 9031;
 pub const RELAY_ADMIN_CHANGE_ROLE: u32 = 9032;
 /// Buzz: Set the workspace profile (icon). Admin/owner-signed command.
 pub const RELAY_ADMIN_SET_WORKSPACE_PROFILE: u32 = 9033;
+/// Buzz: Scout prepares an exact, short-lived channel-deletion approval request.
+pub const SCOUT_CHANNEL_DELETE_PREPARE: u32 = 9037;
+/// Buzz: Scout executes a prepared channel deletion using an owner's signed approval event.
+pub const SCOUT_CHANNEL_DELETE_EXECUTE: u32 = 9038;
+/// Buzz: Scout claims routine admin membership in a channel without taking ownership.
+pub const SCOUT_CHANNEL_CLAIM_ADMIN: u32 = 9039;
 // NIP-43 relay membership announcement events (relay-signed)
 /// NIP-43: Relay membership list snapshot (relay-signed, replaceable by convention).
 pub const KIND_NIP43_MEMBERSHIP_LIST: u32 = 13534;

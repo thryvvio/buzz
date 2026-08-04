@@ -47,6 +47,7 @@ See:
 |---|---|---|
 | `relayUrl` | Public `wss://` URL clients connect to | Always |
 | `ownerPubkey` | 64-char lowercase hex Nostr pubkey of the relay operator | When `relay.requireRelayMembership=true` (default) |
+| `scoutOperatorPubkey` | Optional 64-char lowercase hex Nostr pubkey for the audited cross-channel Scout operator bridge | No |
 | `secrets.existingSecret` | Name of pre-created Secret | Production / GitOps |
 | `externalPostgresql.url` / `externalRedis.url` / `s3.endpoint` | External service URLs | Production — when the matching bundled service is disabled (the default) |
 

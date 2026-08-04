@@ -1013,6 +1013,11 @@ impl Db {
         migration::run_migrations(&self.pool).await
     }
 
+    /// Writer pool for transactionally coupled relay command handlers.
+    pub fn writer_pool(&self) -> &sqlx::PgPool {
+        &self.pool
+    }
+
     /// Returns `true` if the database is reachable (used by readiness probes).
     pub async fn ping(&self) -> bool {
         sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
