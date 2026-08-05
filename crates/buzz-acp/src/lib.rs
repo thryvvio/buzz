@@ -3347,6 +3347,21 @@ fn is_auth_error(error: &acp::AcpError) -> bool {
     message.contains("Re-authenticate") || message.contains("API Error: 401")
 }
 
+/// Returns `true` for Hermes' generic JSON-RPC internal error with no detail
+/// that a user can act on.
+///
+/// The full error remains in the harness log and observer telemetry. Publishing
+/// it into the originating channel after retries are exhausted only creates a
+/// delayed, context-free nuisance message; errors with any additional detail
+/// remain visible through the normal failure-notice path.
+fn is_unactionable_internal_error(error: &acp::AcpError) -> bool {
+    matches!(
+        error,
+        acp::AcpError::AgentError { code: -32603, message }
+            if message.trim().eq_ignore_ascii_case("Internal error")
+    )
+}
+
 /// Spawn a task that posts a user-visible failure notice to the relay.
 ///
 /// Shared by the hard-cap immediate dead-letter path and the retries-exhausted
@@ -3483,19 +3498,32 @@ fn handle_prompt_result(
                     .to_string();
                 spawn_failure_notice(rest_client, &batch, content);
             } else if let Some(dead) = queue.requeue(batch) {
-                let reason = match &result.outcome {
-                    PromptOutcome::Timeout(TimeoutKind::Idle) => "the turn timed out".to_string(),
-                    PromptOutcome::Timeout(TimeoutKind::Hard { .. }) => {
-                        "the turn exceeded the maximum duration".to_string()
-                    }
-                    PromptOutcome::AgentExited => "the agent process exited".to_string(),
-                    PromptOutcome::Error(e) => format!("{e}"),
-                    _ => "repeated failures".to_string(),
-                };
-                let content = format!(
-                    "⚠️ I couldn't process the last request after multiple retries ({reason}). Please re-send if it's still needed."
-                );
-                spawn_failure_notice(rest_client, &dead, content);
+                if matches!(
+                    &result.outcome,
+                    PromptOutcome::Error(e) if is_unactionable_internal_error(e)
+                ) {
+                    tracing::error!(
+                        channel_id = %dead.channel_id,
+                        events = dead.events.len(),
+                        "dead-lettered batch after repeated generic Hermes -32603 errors; suppressing non-actionable channel notice"
+                    );
+                } else {
+                    let reason = match &result.outcome {
+                        PromptOutcome::Timeout(TimeoutKind::Idle) => {
+                            "the turn timed out".to_string()
+                        }
+                        PromptOutcome::Timeout(TimeoutKind::Hard { .. }) => {
+                            "the turn exceeded the maximum duration".to_string()
+                        }
+                        PromptOutcome::AgentExited => "the agent process exited".to_string(),
+                        PromptOutcome::Error(e) => format!("{e}"),
+                        _ => "repeated failures".to_string(),
+                    };
+                    let content = format!(
+                        "⚠️ I couldn't process the last request after multiple retries ({reason}). Please re-send if it's still needed."
+                    );
+                    spawn_failure_notice(rest_client, &dead, content);
+                }
             }
         } else {
             tracing::debug!(
@@ -6758,6 +6786,32 @@ mod error_outcome_emission_tests {
             !is_auth_error(&timeout),
             "WriteTimeout must not be classified as auth error"
         );
+    }
+
+    #[test]
+    fn generic_hermes_internal_error_is_not_user_actionable() {
+        let error = acp::AcpError::AgentError {
+            code: -32603,
+            message: "Internal error".to_string(),
+        };
+        assert!(
+            is_unactionable_internal_error(&error),
+            "generic Hermes -32603 errors must stay in telemetry instead of becoming chat spam"
+        );
+    }
+
+    #[test]
+    fn detailed_or_non_internal_agent_errors_remain_user_visible() {
+        let detailed = acp::AcpError::AgentError {
+            code: -32603,
+            message: "Internal error: API Error: 401 OAuth access token has expired.".to_string(),
+        };
+        let other = acp::AcpError::AgentError {
+            code: -32601,
+            message: "Usage credits required".to_string(),
+        };
+        assert!(!is_unactionable_internal_error(&detailed));
+        assert!(!is_unactionable_internal_error(&other));
     }
 
     // ── auth error dead-letter behavior ────────────────────────────────────
