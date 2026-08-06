@@ -60,6 +60,15 @@ pub enum DedupMode {
     Queue,
 }
 
+/// Scope used for scheduling and retained ACP session identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum SessionScope {
+    /// One independent execution lane and session per outermost conversation root.
+    Thread,
+    /// Legacy behavior: one serialized execution lane and session per channel.
+    Channel,
+}
+
 /// How to handle new @mentions while a turn is already in-flight for that channel.
 #[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
 pub enum MultipleEventHandling {
@@ -482,6 +491,16 @@ pub struct CliArgs {
     /// Connect and subscribe before starting the ACP/LLM subprocess pool.
     #[arg(long, env = "BUZZ_ACP_LAZY_POOL", default_value_t = false)]
     pub lazy_pool: bool,
+
+    /// Scheduling and retained-session scope. Thread scope is the durable default;
+    /// channel scope preserves the legacy one-session-per-channel behavior.
+    #[arg(
+        long,
+        env = "BUZZ_ACP_SESSION_SCOPE",
+        default_value = "thread",
+        value_enum
+    )]
+    pub session_scope: SessionScope,
 }
 
 /// Merged NIP-01 subscription filter for a single channel.
@@ -559,6 +578,9 @@ pub struct Config {
     pub exit_after_inactivity_secs: u64,
     /// Whether ACP/LLM subprocess initialization is deferred until accepted work arrives.
     pub lazy_pool: bool,
+
+    /// Scheduling and retained-session scope.
+    pub session_scope: SessionScope,
     /// Agent owner pubkey (hex). Used for `--respond-to=owner-only` gate.
     /// Replaces the old REST-based owner lookup.
     pub agent_owner: Option<String>,
@@ -1107,6 +1129,7 @@ impl Config {
             relay_observer: args.relay_observer,
             exit_after_inactivity_secs: args.exit_after_inactivity,
             lazy_pool: args.lazy_pool,
+            session_scope: args.session_scope,
             agent_owner: args.agent_owner.map(|s| s.trim().to_ascii_lowercase()),
             no_base_prompt: args.no_base_prompt,
             base_prompt_content,
@@ -1479,6 +1502,7 @@ mod tests {
             exit_after_inactivity_secs: 0,
             lazy_pool: false,
             agent_owner: None,
+            session_scope: SessionScope::Channel,
             no_base_prompt: false,
             base_prompt_content: None,
         }
@@ -2552,6 +2576,21 @@ channels = "ALL"
     }
 
     // ── Multiple-event-handling validation + default ──────────────────────────
+
+    #[test]
+    fn test_session_scope_defaults_to_thread_and_accepts_legacy_channel_mode() {
+        let default_args = CliArgs::parse_from(["buzz-acp", "--private-key", &"0".repeat(64)]);
+        assert_eq!(default_args.session_scope, SessionScope::Thread);
+
+        let channel_args = CliArgs::parse_from([
+            "buzz-acp",
+            "--private-key",
+            &"0".repeat(64),
+            "--session-scope",
+            "channel",
+        ]);
+        assert_eq!(channel_args.session_scope, SessionScope::Channel);
+    }
 
     #[test]
     fn test_multiple_event_handling_default_is_steer() {
